@@ -1,5 +1,6 @@
 name: SBOM + Dependency Scanning
 
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
