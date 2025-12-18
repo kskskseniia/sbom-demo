@@ -1,9 +1,9 @@
 name: SBOM + Dependency Scanning
 
-
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 jobs:
   sbom_build:
