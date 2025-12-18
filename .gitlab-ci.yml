@@ -11,16 +11,18 @@ stages:
 variables:
   MAVEN_CLI_OPTS: "-B -Dmaven.test.skip=true"
 
-# === 1. Генерация SBOM ===
 generate_sbom:
   stage: build
   image: maven:3.9.9-eclipse-temurin-17
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - when: never
   script:
     - mvn $MAVEN_CLI_OPTS clean verify
-    - mvn org.cyclonedx:cyclonedx-maven-plugin:2.7.9:makeAggregateBom
+    - mvn -B org.cyclonedx:cyclonedx-maven-plugin:2.7.9:makeAggregateBom
   artifacts:
+    when: always
     paths:
       - target/bom.json
     expire_in: 1 week
-  only:
-    - merge_requests
