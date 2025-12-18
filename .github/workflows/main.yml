@@ -2,6 +2,7 @@ name: SBOM + Dependency Scanning
 
 on:
   pull_request:
+    branches: [master]
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
@@ -25,13 +26,13 @@ jobs:
         run: |
           mvn -B -DskipTests clean verify
           mvn -B org.cyclonedx:cyclonedx-maven-plugin:2.7.9:makeAggregateBom
-          test -f target/bom.json || (echo "SBOM not found: target/bom.json" && ls -la target && exit 1)
+          test -f target/bom.xml || (echo "SBOM not found: target/bom.xml" && ls -la target && exit 1)
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
         with:
           name: sbom-cyclonedx
-          path: target/bom.json
+          path: target/bom.xml
           retention-days: 7
 
   dependency_check:
@@ -74,19 +75,9 @@ jobs:
         env:
           DT_URL: ${{ secrets.DT_URL }}
           DT_API_KEY: ${{ secrets.DT_API_KEY }}
-          DT_PROJECT_NAME: ${{ secrets.DT_PROJECT_NAME }}
-          DT_PROJECT_VERSION: ${{ secrets.DT_PROJECT_VERSION }}
         run: |
-          test -n "$DT_URL" || (echo "DT_URL secret is missing" && exit 1)
-          test -n "$DT_API_KEY" || (echo "DT_API_KEY secret is missing" && exit 1)
-
-          PROJECT_NAME="${DT_PROJECT_NAME:-Java-SBOM-Demo}"
-          PROJECT_VERSION="${DT_PROJECT_VERSION:-1.0.0}"
-
           curl -sS -X POST "${DT_URL}/api/v1/bom" \
             -H "X-Api-Key: ${DT_API_KEY}" \
             -H "Content-Type: multipart/form-data" \
             -F "autoCreate=true" \
-            -F "projectName=${PROJECT_NAME}" \
-            -F "projectVersion=${PROJECT_VERSION}" \
-            -F "bom=@bom.json"
+            -F
