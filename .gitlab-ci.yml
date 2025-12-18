@@ -1,0 +1,50 @@
+stages:
+  - build
+  - security
+
+variables:
+  MAVEN_CLI_OPTS: "-B -Dmaven.test.skip=true"
+
+# === 1. Генерация SBOM ===
+generate_sbom:
+  stage: build
+  image: maven:3.9.9-eclipse-temurin-17
+  script:
+    - mvn $MAVEN_CLI_OPTS clean verify
+    - mvn org.cyclonedx:cyclonedx-maven-plugin:2.7.9:makeAggregateBom
+  artifacts:
+    paths:
+      - target/bom.json
+    expire_in: 1 week
+  only:
+    - merge_requests
+
+# === 2. Проверка через Dependency Check ===
+dependency_check:
+  stage: security
+  image: owasp/dependency-check:latest
+  script:
+    - dependency-check.sh --scan . --format HTML --out dependency-check-report
+  artifacts:
+    paths:
+      - dependency-check-report
+    expire_in: 1 week
+  only:
+    - merge_requests
+
+# === 3. Загрузка SBOM в Dependency Track ===
+dependency_track_upload:
+  stage: security
+  image: curlimages/curl:latest
+  script:
+    - |
+      curl -X POST "$DT_URL/api/v1/bom" \
+        -H "X-Api-Key: $DT_API_KEY" \
+        -H "Content-Type: multipart/form-data" \
+        -F "projectName=Java-SBOM-Demo" \
+        -F "autoCreate=true" \
+        -F "bom=@target/bom.json"
+  only:
+    - merge_requests
+  dependencies:
+    - generate_sbom
