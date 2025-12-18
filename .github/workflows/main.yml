@@ -1,0 +1,91 @@
+name: SBOM + Dependency Scanning
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  sbom_build:
+    name: Build + Generate SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build (skip tests) + Generate SBOM
+        run: |
+          mvn -B -DskipTests clean verify
+          mvn -B org.cyclonedx:cyclonedx-maven-plugin:2.7.9:makeAggregateBom
+          test -f target/bom.json || (echo "SBOM not found: target/bom.json" && ls -la target && exit 1)
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: target/bom.json
+          retention-days: 7
+
+  dependency_check:
+    name: Security - OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    needs: sbom_build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Dependency-Check (HTML)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "java-maven-project"
+          path: "."
+          format: "HTML"
+          out: "dependency-check-report"
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: dependency-check-report
+          retention-days: 7
+
+  dependency_track_upload:
+    if: false
+    name: Security - Upload SBOM to Dependency-Track (disabled)
+    runs-on: ubuntu-latest
+    needs: sbom_build
+
+    steps:
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-cyclonedx
+
+      - name: Upload BOM to Dependency-Track via API
+        env:
+          DT_URL: ${{ secrets.DT_URL }}
+          DT_API_KEY: ${{ secrets.DT_API_KEY }}
+          DT_PROJECT_NAME: ${{ secrets.DT_PROJECT_NAME }}
+          DT_PROJECT_VERSION: ${{ secrets.DT_PROJECT_VERSION }}
+        run: |
+          test -n "$DT_URL" || (echo "DT_URL secret is missing" && exit 1)
+          test -n "$DT_API_KEY" || (echo "DT_API_KEY secret is missing" && exit 1)
+
+          PROJECT_NAME="${DT_PROJECT_NAME:-Java-SBOM-Demo}"
+          PROJECT_VERSION="${DT_PROJECT_VERSION:-1.0.0}"
+
+          curl -sS -X POST "${DT_URL}/api/v1/bom" \
+            -H "X-Api-Key: ${DT_API_KEY}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "autoCreate=true" \
+            -F "projectName=${PROJECT_NAME}" \
+            -F "projectVersion=${PROJECT_VERSION}" \
+            -F "bom=@bom.json"
